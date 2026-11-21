@@ -973,7 +973,7 @@ export default function App() {
       setUser(currentUser);
       setAuthLoading(false);
     });
-
+const appId = 'daily-performance';
     return () => unsubscribe();
   }, []);
 
