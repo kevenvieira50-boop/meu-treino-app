@@ -48,7 +48,7 @@ import {
   X,
   Check,
 } from 'lucide-react';
-
+const appId = 'daily-performance';
 // --- CONFIGURAÇÃO FIREBASE ---
 // --- CONFIGURAÇÃO FIREBASE ---
 const firebaseConfig = {
