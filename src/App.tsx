@@ -4,10 +4,11 @@ import {
   getAuth,
   signInWithPopup,
   GoogleAuthProvider,
-  signInWithCustomToken,
-  signInAnonymously,
   onAuthStateChanged,
   signOut,
+  setPersistence,
+  browserLocalPersistence,
+  indexedDBLocalPersistence,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -17,6 +18,7 @@ import {
   addDoc,
   deleteDoc,
   onSnapshot,
+  enableIndexedDbPersistence,
 } from 'firebase/firestore';
 import {
   Utensils,
@@ -48,8 +50,9 @@ import {
   X,
   Check,
 } from 'lucide-react';
+
 const appId = 'daily-performance';
-// --- CONFIGURAÇÃO FIREBASE ---
+
 // --- CONFIGURAÇÃO FIREBASE ---
 const firebaseConfig = {
   apiKey: 'AIzaSyCIqqOvZ1dQHIwBwp_PD6a4D08f6pjfUOg',
@@ -60,445 +63,94 @@ const firebaseConfig = {
   appId: '1:156807141527:web:d35428d628fb9e83a971d2',
   measurementId: 'G-GNF229LNNZ',
 };
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// Persistência local robusta para Mobile / iOS Safari / PWA
+if (typeof window !== 'undefined') {
+  setPersistence(auth, indexedDBLocalPersistence || browserLocalPersistence).catch(() => {});
+  enableIndexedDbPersistence(db).catch(() => {});
+}
+
 // BANCO BASE DE ALIMENTOS (MACROS POR 100G)
 // =========================================================================
 const BASE_FOOD_DATABASE = [
   // Suínos
-  {
-    category: 'Suínos',
-    name: 'Filé de pernil suíno grelhado',
-    p: 26.0,
-    c: 0.0,
-    f: 7.0,
-    kcal: 170,
-  },
-  {
-    category: 'Suínos',
-    name: 'Filé de pernil assado',
-    p: 27.0,
-    c: 0.0,
-    f: 8.5,
-    kcal: 185,
-  },
-  {
-    category: 'Suínos',
-    name: 'Lombo suíno grelhado',
-    p: 28.0,
-    c: 0.0,
-    f: 5.5,
-    kcal: 165,
-  },
-  {
-    category: 'Suínos',
-    name: 'Bisteca suína grelhada',
-    p: 25.0,
-    c: 0.0,
-    f: 10.0,
-    kcal: 195,
-  },
+  { category: 'Suínos', name: 'Filé de pernil suíno grelhado', p: 26.0, c: 0.0, f: 7.0, kcal: 170 },
+  { category: 'Suínos', name: 'Filé de pernil assado', p: 27.0, c: 0.0, f: 8.5, kcal: 185 },
+  { category: 'Suínos', name: 'Lombo suíno grelhado', p: 28.0, c: 0.0, f: 5.5, kcal: 165 },
+  { category: 'Suínos', name: 'Bisteca suína grelhada', p: 25.0, c: 0.0, f: 10.0, kcal: 195 },
 
   // Ovos
-  {
-    category: 'Ovos',
-    name: 'Ovo mexido simples',
-    p: 13.0,
-    c: 1.2,
-    f: 11.0,
-    kcal: 156,
-  },
-  {
-    category: 'Ovos',
-    name: 'Ovo mexido com manteiga/azeite',
-    p: 12.5,
-    c: 1.2,
-    f: 15.0,
-    kcal: 190,
-  },
+  { category: 'Ovos', name: 'Ovo mexido simples', p: 13.0, c: 1.2, f: 11.0, kcal: 156 },
+  { category: 'Ovos', name: 'Ovo mexido com manteiga/azeite', p: 12.5, c: 1.2, f: 15.0, kcal: 190 },
   { category: 'Ovos', name: 'Ovo cozido', p: 13.0, c: 1.1, f: 10.5, kcal: 155 },
   { category: 'Ovos', name: 'Ovo frito', p: 13.5, c: 1.2, f: 16.0, kcal: 205 },
-  {
-    category: 'Ovos',
-    name: 'Clara cozida / pasteurizada',
-    p: 11.0,
-    c: 0.7,
-    f: 0.2,
-    kcal: 52,
-  },
-  {
-    category: 'Ovos',
-    name: 'Omelete simples',
-    p: 13.0,
-    c: 1.5,
-    f: 12.0,
-    kcal: 168,
-  },
+  { category: 'Ovos', name: 'Clara cozida / pasteurizada', p: 11.0, c: 0.7, f: 0.2, kcal: 52 },
+  { category: 'Ovos', name: 'Omelete simples', p: 13.0, c: 1.5, f: 12.0, kcal: 168 },
 
   // Aves
-  {
-    category: 'Aves',
-    name: 'Peito de frango grelhado',
-    p: 31.0,
-    c: 0.0,
-    f: 3.5,
-    kcal: 160,
-  },
-  {
-    category: 'Aves',
-    name: 'Sassami de frango grelhado',
-    p: 30.0,
-    c: 0.0,
-    f: 2.5,
-    kcal: 150,
-  },
-  {
-    category: 'Aves',
-    name: 'Peito de frango cozido / desfiado',
-    p: 30.0,
-    c: 0.0,
-    f: 3.0,
-    kcal: 155,
-  },
-  {
-    category: 'Aves',
-    name: 'Sobrecoxa de frango sem pele',
-    p: 25.0,
-    c: 0.0,
-    f: 9.0,
-    kcal: 185,
-  },
+  { category: 'Aves', name: 'Peito de frango grelhado', p: 31.0, c: 0.0, f: 3.5, kcal: 160 },
+  { category: 'Aves', name: 'Sassami de frango grelhado', p: 30.0, c: 0.0, f: 2.5, kcal: 150 },
+  { category: 'Aves', name: 'Peito de frango cozido / desfiado', p: 30.0, c: 0.0, f: 3.0, kcal: 155 },
+  { category: 'Aves', name: 'Sobrecoxa de frango sem pele', p: 25.0, c: 0.0, f: 9.0, kcal: 185 },
 
   // Bovinos
-  {
-    category: 'Bovinos',
-    name: 'Patinho moído / grelhado',
-    p: 28.0,
-    c: 0.0,
-    f: 6.5,
-    kcal: 180,
-  },
-  {
-    category: 'Bovinos',
-    name: 'Contrafilé grelhado',
-    p: 27.0,
-    c: 0.0,
-    f: 10.0,
-    kcal: 210,
-  },
-  {
-    category: 'Bovinos',
-    name: 'Alcatra grelhada',
-    p: 29.0,
-    c: 0.0,
-    f: 7.5,
-    kcal: 190,
-  },
-  {
-    category: 'Bovinos',
-    name: 'Acém moído refogado',
-    p: 26.0,
-    c: 0.0,
-    f: 12.0,
-    kcal: 220,
-  },
-  {
-    category: 'Bovinos',
-    name: 'Coxão mole grelhado',
-    p: 28.5,
-    c: 0.0,
-    f: 6.0,
-    kcal: 175,
-  },
+  { category: 'Bovinos', name: 'Patinho moído / grelhado', p: 28.0, c: 0.0, f: 6.5, kcal: 180 },
+  { category: 'Bovinos', name: 'Contrafilé grelhado', p: 27.0, c: 0.0, f: 10.0, kcal: 210 },
+  { category: 'Bovinos', name: 'Alcatra grelhada', p: 29.0, c: 0.0, f: 7.5, kcal: 190 },
+  { category: 'Bovinos', name: 'Acém moído refogado', p: 26.0, c: 0.0, f: 12.0, kcal: 220 },
+  { category: 'Bovinos', name: 'Coxão mole grelhado', p: 28.5, c: 0.0, f: 6.0, kcal: 175 },
 
   // Pescados
-  {
-    category: 'Pescados',
-    name: 'Tilápia grelhada',
-    p: 26.0,
-    c: 0.0,
-    f: 2.0,
-    kcal: 125,
-  },
-  {
-    category: 'Pescados',
-    name: 'Salmão grelhado',
-    p: 24.0,
-    c: 0.0,
-    f: 12.0,
-    kcal: 208,
-  },
-  {
-    category: 'Pescados',
-    name: 'Atum em lata (em água)',
-    p: 25.0,
-    c: 0.0,
-    f: 1.0,
-    kcal: 116,
-  },
-  {
-    category: 'Pescados',
-    name: 'Sardinha em lata / fresca',
-    p: 21.0,
-    c: 0.0,
-    f: 10.0,
-    kcal: 178,
-  },
+  { category: 'Pescados', name: 'Tilápia grelhada', p: 26.0, c: 0.0, f: 2.0, kcal: 125 },
+  { category: 'Pescados', name: 'Salmão grelhado', p: 24.0, c: 0.0, f: 12.0, kcal: 208 },
+  { category: 'Pescados', name: 'Atum em lata (em água)', p: 25.0, c: 0.0, f: 1.0, kcal: 116 },
+  { category: 'Pescados', name: 'Sardinha em lata / fresca', p: 21.0, c: 0.0, f: 10.0, kcal: 178 },
 
   // Carboidratos
-  {
-    category: 'Carboidratos',
-    name: 'Arroz branco cozido',
-    p: 2.5,
-    c: 28.0,
-    f: 0.2,
-    kcal: 130,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Arroz integral cozido',
-    p: 2.6,
-    c: 25.5,
-    f: 1.0,
-    kcal: 124,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Mandioca cozida',
-    p: 1.2,
-    c: 38.0,
-    f: 0.3,
-    kcal: 160,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Batata doce cozida / airfryer',
-    p: 1.5,
-    c: 20.0,
-    f: 0.1,
-    kcal: 86,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Batata inglesa cozida / purê',
-    p: 2.0,
-    c: 17.5,
-    f: 0.1,
-    kcal: 77,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Aveia em flocos',
-    p: 14.0,
-    c: 66.0,
-    f: 7.0,
-    kcal: 370,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Pão francês de padaria',
-    p: 8.0,
-    c: 58.0,
-    f: 3.0,
-    kcal: 290,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Pão de forma integral',
-    p: 9.5,
-    c: 45.0,
-    f: 3.0,
-    kcal: 245,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Macarrão cozido',
-    p: 4.5,
-    c: 30.0,
-    f: 0.9,
-    kcal: 150,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Cuscuz de milho cozido',
-    p: 2.3,
-    c: 23.0,
-    f: 0.7,
-    kcal: 110,
-  },
-  {
-    category: 'Carboidratos',
-    name: 'Tapioca (goma hidratada)',
-    p: 0.0,
-    c: 54.0,
-    f: 0.0,
-    kcal: 220,
-  },
+  { category: 'Carboidratos', name: 'Arroz branco cozido', p: 2.5, c: 28.0, f: 0.2, kcal: 130 },
+  { category: 'Carboidratos', name: 'Arroz integral cozido', p: 2.6, c: 25.5, f: 1.0, kcal: 124 },
+  { category: 'Carboidratos', name: 'Mandioca cozida', p: 1.2, c: 38.0, f: 0.3, kcal: 160 },
+  { category: 'Carboidratos', name: 'Batata doce cozida / airfryer', p: 1.5, c: 20.0, f: 0.1, kcal: 86 },
+  { category: 'Carboidratos', name: 'Batata inglesa cozida / purê', p: 2.0, c: 17.5, f: 0.1, kcal: 77 },
+  { category: 'Carboidratos', name: 'Aveia em flocos', p: 14.0, c: 66.0, f: 7.0, kcal: 370 },
+  { category: 'Carboidratos', name: 'Pão francês de padaria', p: 8.0, c: 58.0, f: 3.0, kcal: 290 },
+  { category: 'Carboidratos', name: 'Pão de forma integral', p: 9.5, c: 45.0, f: 3.0, kcal: 245 },
+  { category: 'Carboidratos', name: 'Macarrão cozido', p: 4.5, c: 30.0, f: 0.9, kcal: 150 },
+  { category: 'Carboidratos', name: 'Cuscuz de milho cozido', p: 2.3, c: 23.0, f: 0.7, kcal: 110 },
+  { category: 'Carboidratos', name: 'Tapioca (goma hidratada)', p: 0.0, c: 54.0, f: 0.0, kcal: 220 },
 
   // Frutas
-  {
-    category: 'Frutas',
-    name: 'Banana prata / nanica',
-    p: 1.3,
-    c: 23.0,
-    f: 0.3,
-    kcal: 89,
-  },
-  {
-    category: 'Frutas',
-    name: 'Maçã fresca',
-    p: 0.3,
-    c: 14.0,
-    f: 0.2,
-    kcal: 52,
-  },
-  {
-    category: 'Frutas',
-    name: 'Morango fresco',
-    p: 0.8,
-    c: 7.5,
-    f: 0.3,
-    kcal: 33,
-  },
-  {
-    category: 'Frutas',
-    name: 'Abacaxi fresco',
-    p: 0.5,
-    c: 13.0,
-    f: 0.1,
-    kcal: 50,
-  },
-  {
-    category: 'Frutas',
-    name: 'Mamão papaia',
-    p: 0.5,
-    c: 11.0,
-    f: 0.1,
-    kcal: 43,
-  },
+  { category: 'Frutas', name: 'Banana prata / nanica', p: 1.3, c: 23.0, f: 0.3, kcal: 89 },
+  { category: 'Frutas', name: 'Maçã fresca', p: 0.3, c: 14.0, f: 0.2, kcal: 52 },
+  { category: 'Frutas', name: 'Morango fresco', p: 0.8, c: 7.5, f: 0.3, kcal: 33 },
+  { category: 'Frutas', name: 'Abacaxi fresco', p: 0.5, c: 13.0, f: 0.1, kcal: 50 },
+  { category: 'Frutas', name: 'Mamão papaia', p: 0.5, c: 11.0, f: 0.1, kcal: 43 },
   { category: 'Frutas', name: 'Uva fresca', p: 0.6, c: 17.0, f: 0.2, kcal: 67 },
-  {
-    category: 'Frutas',
-    name: 'Laranja pera',
-    p: 1.0,
-    c: 11.5,
-    f: 0.1,
-    kcal: 47,
-  },
+  { category: 'Frutas', name: 'Laranja pera', p: 1.0, c: 11.5, f: 0.1, kcal: 47 },
 
   // Laticínios & Suplementos
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Whey Protein Concentrado (80%)',
-    p: 80.0,
-    c: 6.0,
-    f: 5.5,
-    kcal: 395,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Whey Protein Isolado',
-    p: 90.0,
-    c: 1.5,
-    f: 1.0,
-    kcal: 375,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Leite desnatado',
-    p: 3.3,
-    c: 5.0,
-    f: 0.2,
-    kcal: 35,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Leite integral',
-    p: 3.2,
-    c: 4.8,
-    f: 3.3,
-    kcal: 62,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Leite zero lactose',
-    p: 3.3,
-    c: 5.0,
-    f: 0.2,
-    kcal: 35,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Queijo cottage',
-    p: 12.0,
-    c: 3.0,
-    f: 4.0,
-    kcal: 98,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Queijo minas frescal',
-    p: 16.0,
-    c: 2.5,
-    f: 18.0,
-    kcal: 240,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Queijo muçarela',
-    p: 25.0,
-    c: 2.0,
-    f: 23.0,
-    kcal: 315,
-  },
-  {
-    category: 'Laticínios & Suplementos',
-    name: 'Iogurte natural desnatado',
-    p: 8.5,
-    c: 4.5,
-    f: 0.5,
-    kcal: 58,
-  },
+  { category: 'Laticínios & Suplementos', name: 'Whey Protein Concentrado (80%)', p: 80.0, c: 6.0, f: 5.5, kcal: 395 },
+  { category: 'Laticínios & Suplementos', name: 'Whey Protein Isolado', p: 90.0, c: 1.5, f: 1.0, kcal: 375 },
+  { category: 'Laticínios & Suplementos', name: 'Leite desnatado', p: 3.3, c: 5.0, f: 0.2, kcal: 35 },
+  { category: 'Laticínios & Suplementos', name: 'Leite integral', p: 3.2, c: 4.8, f: 3.3, kcal: 62 },
+  { category: 'Laticínios & Suplementos', name: 'Leite zero lactose', p: 3.3, c: 5.0, f: 0.2, kcal: 35 },
+  { category: 'Laticínios & Suplementos', name: 'Queijo cottage', p: 12.0, c: 3.0, f: 4.0, kcal: 98 },
+  { category: 'Laticínios & Suplementos', name: 'Queijo minas frescal', p: 16.0, c: 2.5, f: 18.0, kcal: 240 },
+  { category: 'Laticínios & Suplementos', name: 'Queijo muçarela', p: 25.0, c: 2.0, f: 23.0, kcal: 315 },
+  { category: 'Laticínios & Suplementos', name: 'Iogurte natural desnatado', p: 8.5, c: 4.5, f: 0.5, kcal: 58 },
 
   // Gorduras
-  {
-    category: 'Gorduras',
-    name: 'Azeite de oliva extra virgem',
-    p: 0.0,
-    c: 0.0,
-    f: 100.0,
-    kcal: 884,
-  },
-  {
-    category: 'Gorduras',
-    name: 'Manteiga tradicional',
-    p: 0.8,
-    c: 0.1,
-    f: 82.0,
-    kcal: 730,
-  },
-  {
-    category: 'Gorduras',
-    name: 'Pasta de amendoim integral',
-    p: 26.0,
-    c: 18.0,
-    f: 50.0,
-    kcal: 590,
-  },
-  {
-    category: 'Gorduras',
-    name: 'Castanha-do-pará',
-    p: 14.3,
-    c: 12.0,
-    f: 66.0,
-    kcal: 656,
-  },
+  { category: 'Gorduras', name: 'Azeite de oliva extra virgem', p: 0.0, c: 0.0, f: 100.0, kcal: 884 },
+  { category: 'Gorduras', name: 'Manteiga tradicional', p: 0.8, c: 0.1, f: 82.0, kcal: 730 },
+  { category: 'Gorduras', name: 'Pasta de amendoim integral', p: 26.0, c: 18.0, f: 50.0, kcal: 590 },
+  { category: 'Gorduras', name: 'Castanha-do-pará', p: 14.3, c: 12.0, f: 66.0, kcal: 656 },
 ];
 
-// =========================================================================
 // ACADEMIAS E MÉTODOS FECHADOS
-// =========================================================================
 const GYM_OPTIONS = [
   'Ultra Vila Branca',
   'Smartfit Vila Branca',
@@ -520,398 +172,104 @@ const TRAINING_METHODS = [
   '3x 12-15',
 ];
 
-// =========================================================================
 // CATÁLOGO OFICIAL DE EXERCÍCIOS DESDUPLICADOS POR GRUPO MUSCULAR
-// =========================================================================
 const OFFICIAL_EXERCISE_CATALOG = [
   // Dorsal
   { name: 'Pulldown com corda', muscle: 'Dorsal', defaultMethod: '3x 9-15' },
-  {
-    name: 'Pulldown com triângulo',
-    muscle: 'Dorsal',
-    defaultMethod: '3x 9-15',
-  },
+  { name: 'Pulldown com triângulo', muscle: 'Dorsal', defaultMethod: '3x 9-15' },
   { name: 'Puxada alta em X', muscle: 'Dorsal', defaultMethod: '3x 9-15' },
-  {
-    name: 'Puxada alta máquina',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Puxada frente',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Puxada supinada',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Puxada triângulo',
-    muscle: 'Dorsal',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Remada articulada pegada neutra',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Remada articulada pegada pronada',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Remada baixa triângulo',
-    muscle: 'Dorsal',
-    defaultMethod: '1x DC Style Rest-Pause',
-  },
-  {
-    name: 'Remada baixa triângulo fábrica de monstros',
-    muscle: 'Dorsal',
-    defaultMethod: '1x DC Style Rest-Pause',
-  },
-  {
-    name: 'Remada curvada pronada',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Remada curvada pronada smith',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Remada serrote',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Levantamento terra',
-    muscle: 'Dorsal',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
+  { name: 'Puxada alta máquina', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Puxada frente', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Puxada supinada', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Puxada triângulo', muscle: 'Dorsal', defaultMethod: '1x Muscle Round' },
+  { name: 'Remada articulada pegada neutra', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Remada articulada pegada pronada', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Remada baixa triângulo', muscle: 'Dorsal', defaultMethod: '1x DC Style Rest-Pause' },
+  { name: 'Remada baixa triângulo fábrica de monstros', muscle: 'Dorsal', defaultMethod: '1x DC Style Rest-Pause' },
+  { name: 'Remada curvada pronada', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Remada curvada pronada smith', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Remada serrote', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Levantamento terra', muscle: 'Dorsal', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
 
   // Peitoral
-  {
-    name: 'Crucifixo com halteres',
-    muscle: 'Peitoral',
-    defaultMethod: '1x DC Style Rest-Pause',
-  },
-  {
-    name: 'Crucifixo inclinado máquina',
-    muscle: 'Peitoral',
-    defaultMethod: '1x DC Style Rest-Pause',
-  },
-  {
-    name: 'Crucifixo polia alta',
-    muscle: 'Peitoral',
-    defaultMethod: '3x 9-15',
-  },
-  {
-    name: 'Supino declinado sentado máquina',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino fechado Smith',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino inclinado halteres',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino inclinado máquina',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino inclinado máquina anilhas',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino inclinado máquina cimerian',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino inclinado Smith',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino levemente inclinado com halteres',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino reto com halteres',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino reto deitado máquina compass',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino reto máquina articulada c/ anilhas',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino reto máquina deitado',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino reto máquina sentado',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Supino reto smith',
-    muscle: 'Peitoral',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
+  { name: 'Crucifixo com halteres', muscle: 'Peitoral', defaultMethod: '1x DC Style Rest-Pause' },
+  { name: 'Crucifixo inclinado máquina', muscle: 'Peitoral', defaultMethod: '1x DC Style Rest-Pause' },
+  { name: 'Crucifixo polia alta', muscle: 'Peitoral', defaultMethod: '3x 9-15' },
+  { name: 'Supino declinado sentado máquina', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino fechado Smith', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino inclinado halteres', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino inclinado máquina', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino inclinado máquina anilhas', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino inclinado máquina cimerian', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino inclinado Smith', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino levemente inclinado com halteres', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino reto com halteres', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino reto deitado máquina compass', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino reto máquina articulada c/ anilhas', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino reto máquina deitado', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino reto máquina sentado', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Supino reto smith', muscle: 'Peitoral', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
   { name: 'Voador', muscle: 'Peitoral', defaultMethod: '1x Muscle Round' },
 
   // Deltóides / Ombros
-  {
-    name: 'Desenvolvimento máquina',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Desenvolvimento máquina c/ anilhas',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Desenvolvimento Smith',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Elevação lateral com halteres',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Elevação lateral na polia',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '3x 9-15',
-  },
+  { name: 'Desenvolvimento máquina', muscle: 'Deltóides / Ombros', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Desenvolvimento máquina c/ anilhas', muscle: 'Deltóides / Ombros', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Desenvolvimento Smith', muscle: 'Deltóides / Ombros', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Elevação lateral com halteres', muscle: 'Deltóides / Ombros', defaultMethod: '1x Muscle Round' },
+  { name: 'Elevação lateral na polia', muscle: 'Deltóides / Ombros', defaultMethod: '3x 9-15' },
   { name: 'Face pull', muscle: 'Deltóides / Ombros', defaultMethod: '3x 9-15' },
-  {
-    name: 'Remada alta barra w polia',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '3x 9-15',
-  },
-  {
-    name: 'Voador inverso',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '3x 9-15',
-  },
-  {
-    name: 'Y raise',
-    muscle: 'Deltóides / Ombros',
-    defaultMethod: '1x Muscle Round',
-  },
+  { name: 'Remada alta barra w polia', muscle: 'Deltóides / Ombros', defaultMethod: '3x 9-15' },
+  { name: 'Voador inverso', muscle: 'Deltóides / Ombros', defaultMethod: '3x 9-15' },
+  { name: 'Y raise', muscle: 'Deltóides / Ombros', defaultMethod: '1x Muscle Round' },
 
   // Tríceps
-  {
-    name: 'Extensão de tríceps máquina',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps francês com halter',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps francês na polia com corda',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps na corda',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps na polia barra reta',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps testa com barra w',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps testa com halteres',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Tríceps triângulo polia',
-    muscle: 'Tríceps',
-    defaultMethod: '1x Muscle Round',
-  },
+  { name: 'Extensão de tríceps máquina', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps francês com halter', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps francês na polia com corda', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps na corda', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps na polia barra reta', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps testa com barra w', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps testa com halteres', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Tríceps triângulo polia', muscle: 'Tríceps', defaultMethod: '1x Muscle Round' },
 
   // Bíceps & Antebraço
-  {
-    name: 'Bíceps sentado na máquina',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca 45 graus',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca alternada',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca alternada + rosca martelo',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca barra w',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Rosca barra w polia',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca inversa barra w',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Rosca inversa na polia',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Rosca martelo barra romana',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca martelo na polia com corda',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Rosca scott máquina',
-    muscle: 'Bíceps & Antebraço',
-    defaultMethod: '1x Muscle Round',
-  },
+  { name: 'Bíceps sentado na máquina', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca 45 graus', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca alternada', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca alternada + rosca martelo', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca barra w', muscle: 'Bíceps & Antebraço', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Rosca barra w polia', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca inversa barra w', muscle: 'Bíceps & Antebraço', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Rosca inversa na polia', muscle: 'Bíceps & Antebraço', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Rosca martelo barra romana', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca martelo na polia com corda', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
+  { name: 'Rosca scott máquina', muscle: 'Bíceps & Antebraço', defaultMethod: '1x Muscle Round' },
 
   // Quadríceps
-  {
-    name: 'Agachamento búlgaro Smith',
-    muscle: 'Quadríceps',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Agachamento hack',
-    muscle: 'Quadríceps',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Agachamento hack Cimerian',
-    muscle: 'Quadríceps',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Cadeira extensora',
-    muscle: 'Quadríceps',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Leg press 45°',
-    muscle: 'Quadríceps',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Leg press unilateral máquina',
-    muscle: 'Quadríceps',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
+  { name: 'Agachamento búlgaro Smith', muscle: 'Quadríceps', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Agachamento hack', muscle: 'Quadríceps', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Agachamento hack Cimerian', muscle: 'Quadríceps', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Cadeira extensora', muscle: 'Quadríceps', defaultMethod: '1x Muscle Round' },
+  { name: 'Leg press 45°', muscle: 'Quadríceps', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Leg press unilateral máquina', muscle: 'Quadríceps', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
 
   // Posterior de Coxa / Isquiotibiais
-  {
-    name: 'Cadeira flexora',
-    muscle: 'Posterior de Coxa',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Stiff com barra grande',
-    muscle: 'Posterior de Coxa',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Stiff com barra pequena',
-    muscle: 'Posterior de Coxa',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
-  {
-    name: 'Stiff máquina',
-    muscle: 'Posterior de Coxa',
-    defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)',
-  },
+  { name: 'Cadeira flexora', muscle: 'Posterior de Coxa', defaultMethod: '1x Muscle Round' },
+  { name: 'Stiff com barra grande', muscle: 'Posterior de Coxa', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Stiff com barra pequena', muscle: 'Posterior de Coxa', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
+  { name: 'Stiff máquina', muscle: 'Posterior de Coxa', defaultMethod: '1x 5-9 + 1x 9-15 (Back-off)' },
 
   // Glúteos
-  {
-    name: 'Cadeira abdutora',
-    muscle: 'Glúteos',
-    defaultMethod: '1x DC Style Rest-Pause',
-  },
-  {
-    name: 'Elevação de quadril',
-    muscle: 'Glúteos',
-    defaultMethod: '1x Muscle Round',
-  },
+  { name: 'Cadeira abdutora', muscle: 'Glúteos', defaultMethod: '1x DC Style Rest-Pause' },
+  { name: 'Elevação de quadril', muscle: 'Glúteos', defaultMethod: '1x Muscle Round' },
 
   // Panturrilha
-  {
-    name: 'Panturrilha no leg horizontal',
-    muscle: 'Panturrilha',
-    defaultMethod: '1x Muscle Round',
-  },
-  {
-    name: 'Panturrilha sentado',
-    muscle: 'Panturrilha',
-    defaultMethod: '1x Muscle Round',
-  },
+  { name: 'Panturrilha no leg horizontal', muscle: 'Panturrilha', defaultMethod: '1x Muscle Round' },
+  { name: 'Panturrilha sentado', muscle: 'Panturrilha', defaultMethod: '1x Muscle Round' },
 
   // Abdômen
-  {
-    name: 'Abdominal crunch na polia',
-    muscle: 'Abdômen',
-    defaultMethod: '3x 12-15',
-  },
-  {
-    name: 'Abdominal infra declinado',
-    muscle: 'Abdômen',
-    defaultMethod: '3x RM',
-  },
+  { name: 'Abdominal crunch na polia', muscle: 'Abdômen', defaultMethod: '3x 12-15' },
+  { name: 'Abdominal infra declinado', muscle: 'Abdômen', defaultMethod: '3x RM' },
 ];
 
 const DEFAULT_TARGETS = {
@@ -922,16 +280,13 @@ const DEFAULT_TARGETS = {
 
 const getTodayDateStr = () => {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-    2,
-    '0'
-  )}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dieta'); // 'dieta' | 'treino' | 'historico'
+  const [activeTab, setActiveTab] = useState('dieta');
   const [toast, setToast] = useState(null);
 
   // Estados com persistência isolada no Firestore
@@ -951,34 +306,16 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
-  // 1. Autenticação Firebase
+  // 1. Autenticação Firebase com Sessão Persistente
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (
-          typeof __initial_auth_token !== 'undefined' &&
-          __initial_auth_token
-        ) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        }
-      } catch (err) {
-        console.error('Erro na autenticação inicial:', err);
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-    initAuth();
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
     });
-const appId = 'daily-performance';
     return () => unsubscribe();
   }, []);
 
   // 2. Sincronização em Tempo Real no Firestore com coleções desacopladas
-  // Path: /artifacts/{appId}/users/{userId}/{collectionName}
   useEffect(() => {
     if (!user) {
       setWaterRecords([]);
@@ -988,47 +325,11 @@ const appId = 'daily-performance';
       return;
     }
 
-    const waterCol = collection(
-      db,
-      'artifacts',
-      appId,
-      'users',
-      user.uid,
-      'hidratacao'
-    );
-    const mealsCol = collection(
-      db,
-      'artifacts',
-      appId,
-      'users',
-      user.uid,
-      'refeicoes'
-    );
-    const customFoodsCol = collection(
-      db,
-      'artifacts',
-      appId,
-      'users',
-      user.uid,
-      'alimentos_customizados'
-    );
-    const setsCol = collection(
-      db,
-      'artifacts',
-      appId,
-      'users',
-      user.uid,
-      'treinos_series'
-    );
-    const settingsDocRef = doc(
-      db,
-      'artifacts',
-      appId,
-      'users',
-      user.uid,
-      'configuracoes',
-      'perfil'
-    );
+    const waterCol = collection(db, 'artifacts', appId, 'users', user.uid, 'hidratacao');
+    const mealsCol = collection(db, 'artifacts', appId, 'users', user.uid, 'refeicoes');
+    const customFoodsCol = collection(db, 'artifacts', appId, 'users', user.uid, 'alimentos_customizados');
+    const setsCol = collection(db, 'artifacts', appId, 'users', user.uid, 'treinos_series');
+    const settingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'configuracoes', 'perfil');
 
     const unsubWater = onSnapshot(
       waterCol,
@@ -1088,19 +389,12 @@ const appId = 'daily-performance';
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
       showToast('Conectado com sucesso com Conta Google!');
     } catch (error) {
-      console.warn(
-        'Popup do Google indisponível no ambiente. Entrando via sessão segura:',
-        error
-      );
-      try {
-        await signInAnonymously(auth);
-        showToast('Sessão segura ativa!', 'success');
-      } catch (err) {
-        showToast('Falha no login: ' + error.message, 'error');
-      }
+      console.error('Erro ao conectar com Google:', error);
+      showToast('Falha no login com Google. Tente novamente!', 'error');
     }
   };
 
@@ -1112,15 +406,7 @@ const appId = 'daily-performance';
   const handleUpdateProfile = async (newProfile) => {
     if (!user) return;
     try {
-      const docRef = doc(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'configuracoes',
-        'perfil'
-      );
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'configuracoes', 'perfil');
       await setDoc(docRef, { ...userSettings, ...newProfile }, { merge: true });
       showToast('Configuração salva na nuvem!');
     } catch (e) {
@@ -1160,29 +446,22 @@ const appId = 'daily-performance';
               </span>
             </h1>
             <p className="mt-2 text-xs text-neutral-400 leading-relaxed">
-              Controle flexível em tempo real de Dieta, Hidratação e Treinos de
-              Força com histórico por categoria.
+              Controle flexível em tempo real de Dieta, Hidratação e Treinos de Força com histórico por categoria.
             </p>
           </div>
 
           <div className="bg-neutral-900/90 border border-neutral-800/90 rounded-3xl p-5 text-left space-y-3.5 shadow-xl">
             <div className="flex items-center gap-3 text-xs text-neutral-300">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>
-                Base Nutricional Ampla + Cadastro Permanente de Novos Alimentos
-              </span>
+              <span>Base Nutricional Ampla + Cadastro Permanente de Novos Alimentos</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-neutral-300">
               <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-              <span>
-                Catálogo Oficial Desduplicado com Métodos e Academias Fixas
-              </span>
+              <span>Catálogo Oficial Desduplicado com Métodos e Academias Fixas</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-neutral-300">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>
-                Histórico Imediato por Aquecimento, Preparatória e Válida
-              </span>
+              <span>Histórico Imediato por Aquecimento, Preparatória e Válida</span>
             </div>
           </div>
 
@@ -1254,8 +533,7 @@ const appId = 'daily-performance';
               ></span>
             </h1>
             <p className="text-[10px] text-neutral-400 flex items-center gap-1">
-              <span className="text-emerald-400 font-medium">Sincronizado</span>{' '}
-              •{' '}
+              <span className="text-emerald-400 font-medium">Sincronizado</span> •{' '}
               {new Date().toLocaleDateString('pt-BR', {
                 weekday: 'short',
                 day: 'numeric',
@@ -1326,11 +604,7 @@ const appId = 'daily-performance';
                 : 'text-neutral-500 hover:text-neutral-300'
             }`}
           >
-            <div
-              className={`p-1 rounded-xl transition ${
-                activeTab === 'dieta' ? 'bg-emerald-500/10' : ''
-              }`}
-            >
+            <div className={`p-1 rounded-xl transition ${activeTab === 'dieta' ? 'bg-emerald-500/10' : ''}`}>
               <Utensils className="w-5 h-5" />
             </div>
             <span className="text-[11px]">Dieta & Água</span>
@@ -1344,11 +618,7 @@ const appId = 'daily-performance';
                 : 'text-neutral-500 hover:text-neutral-300'
             }`}
           >
-            <div
-              className={`p-1 rounded-xl transition ${
-                activeTab === 'treino' ? 'bg-cyan-500/10' : ''
-              }`}
-            >
+            <div className={`p-1 rounded-xl transition ${activeTab === 'treino' ? 'bg-cyan-500/10' : ''}`}>
               <Dumbbell className="w-5 h-5" />
             </div>
             <span className="text-[11px]">Log Treino</span>
@@ -1362,11 +632,7 @@ const appId = 'daily-performance';
                 : 'text-neutral-500 hover:text-neutral-300'
             }`}
           >
-            <div
-              className={`p-1 rounded-xl transition ${
-                activeTab === 'historico' ? 'bg-indigo-500/10' : ''
-              }`}
-            >
+            <div className={`p-1 rounded-xl transition ${activeTab === 'historico' ? 'bg-indigo-500/10' : ''}`}>
               <History className="w-5 h-5" />
             </div>
             <span className="text-[11px]">Histórico</span>
@@ -1394,51 +660,31 @@ function DietAndWaterModule({
   const [editingTarget, setEditingTarget] = useState(false);
   const [targetInput, setTargetInput] = useState(waterTarget);
 
-  // Água de hoje
   const todayWaterDoc = useMemo(() => {
     return waterRecords.find((w) => w.date === todayStr) || { amountMl: 0 };
   }, [waterRecords, todayStr]);
 
   const currentWater = todayWaterDoc.amountMl || 0;
-  const waterPercent = Math.min(
-    100,
-    Math.round((currentWater / waterTarget) * 100)
-  );
+  const waterPercent = Math.min(100, Math.round((currentWater / waterTarget) * 100));
 
-  // Refeições de hoje
   const todayMeals = useMemo(() => {
     return meals.filter((m) => m.date === todayStr);
   }, [meals, todayStr]);
 
-  const totalProteinToday = todayMeals.reduce(
-    (acc, m) => acc + (Number(m.protein) || 0),
-    0
-  );
-  const totalCaloriesToday = todayMeals.reduce(
-    (acc, m) => acc + (Number(m.calories) || 0),
-    0
-  );
+  const totalProteinToday = todayMeals.reduce((acc, m) => acc + (Number(m.protein) || 0), 0);
+  const totalCaloriesToday = todayMeals.reduce((acc, m) => acc + (Number(m.calories) || 0), 0);
 
-  const proteinPercent = Math.min(
-    100,
-    Math.round((totalProteinToday / DEFAULT_TARGETS.proteinGrams) * 100)
-  );
-  const calPercent = Math.min(
-    100,
-    Math.round((totalCaloriesToday / DEFAULT_TARGETS.calories) * 100)
-  );
+  const proteinPercent = Math.min(100, Math.round((totalProteinToday / DEFAULT_TARGETS.proteinGrams) * 100));
+  const calPercent = Math.min(100, Math.round((totalCaloriesToday / DEFAULT_TARGETS.calories) * 100));
 
-  // Formulário de Refeição
   const mealTypes = ['Café da Manhã', 'Almoço', 'Lanche', 'Jantar/Pós', 'Ceia'];
   const [selectedMealType, setSelectedMealType] = useState('Almoço');
   const [portionGrams, setPortionGrams] = useState(150);
 
-  // Autocomplete
   const [inputFoodQuery, setInputFoodQuery] = useState('');
   const [selectedFoodItem, setSelectedFoodItem] = useState(null);
   const [isAutocompleteOpen, setIsAutocompleteOpen] = useState(false);
 
-  // Modal "+ Novo Alimento" (Persistência Permanente)
   const [isNewFoodModalOpen, setIsNewFoodModalOpen] = useState(false);
   const [modalFoodName, setModalFoodName] = useState('');
   const [modalBasePortion, setModalBasePortion] = useState('100');
@@ -1447,7 +693,6 @@ function DietAndWaterModule({
   const [modalFats, setModalFats] = useState('');
   const [modalCalories, setModalCalories] = useState('');
 
-  // Unificação da Base Estática + Alimentos Customizados Salvos no Firestore
   const allAvailableFoods = useMemo(() => {
     const combined = [...BASE_FOOD_DATABASE];
     customFoods.forEach((cf) => {
@@ -1464,34 +709,20 @@ function DietAndWaterModule({
     return combined;
   }, [customFoods]);
 
-  // Sugestões de autocomplete reativas
   const autocompleteSuggestions = useMemo(() => {
     if (!inputFoodQuery.trim()) {
       return allAvailableFoods.slice(0, 8);
     }
     const q = inputFoodQuery.toLowerCase().trim();
     return allAvailableFoods
-      .filter(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          f.category.toLowerCase().includes(q)
-      )
+      .filter((f) => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q))
       .slice(0, 10);
   }, [inputFoodQuery, allAvailableFoods]);
 
-  // Manipulação de Água
   const handleAddWater = async (amount) => {
     try {
       const docId = `water_${todayStr}`;
-      const docRef = doc(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'hidratacao',
-        docId
-      );
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'hidratacao', docId);
       const newAmount = Math.max(0, currentWater + amount);
       await setDoc(docRef, {
         date: todayStr,
@@ -1507,15 +738,7 @@ function DietAndWaterModule({
   const handleResetWater = async () => {
     try {
       const docId = `water_${todayStr}`;
-      const docRef = doc(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'hidratacao',
-        docId
-      );
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'hidratacao', docId);
       await setDoc(docRef, {
         date: todayStr,
         amountMl: 0,
@@ -1537,11 +760,9 @@ function DietAndWaterModule({
     }
   };
 
-  // Cálculo Dinâmico de Macros
   const previewMacros = useMemo(() => {
     const grams = Number(portionGrams) || 0;
-    if (!selectedFoodItem)
-      return { protein: 0, carbs: 0, fats: 0, calories: 0 };
+    if (!selectedFoodItem) return { protein: 0, carbs: 0, fats: 0, calories: 0 };
     return {
       protein: Math.round(selectedFoodItem.p * (grams / 100)),
       carbs: Math.round(selectedFoodItem.c * (grams / 100)),
@@ -1556,7 +777,6 @@ function DietAndWaterModule({
     setIsAutocompleteOpen(false);
   };
 
-  // Gravar Novo Alimento no Firestore
   const handleSaveCustomFood = async (e) => {
     e.preventDefault();
     if (!modalFoodName.trim()) {
@@ -1581,21 +801,13 @@ function DietAndWaterModule({
     };
 
     try {
-      const customCol = collection(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'alimentos_customizados'
-      );
+      const customCol = collection(db, 'artifacts', appId, 'users', user.uid, 'alimentos_customizados');
       await addDoc(customCol, newFoodObj);
 
       showToast(`Alimento "${newFoodObj.name}" salvo permanentemente!`);
       setSelectedFoodItem({ ...newFoodObj, category: 'Personalizado' });
       setInputFoodQuery(newFoodObj.name);
 
-      // Limpar formulário
       setModalFoodName('');
       setModalProtein('');
       setModalCarbs('');
@@ -1607,12 +819,9 @@ function DietAndWaterModule({
     }
   };
 
-  // Gravar Refeição
   const handleSaveMeal = async (e) => {
     e.preventDefault();
-    const finalName = selectedFoodItem
-      ? selectedFoodItem.name
-      : inputFoodQuery.trim();
+    const finalName = selectedFoodItem ? selectedFoodItem.name : inputFoodQuery.trim();
     if (!finalName) {
       showToast('Selecione ou digite um alimento', 'error');
       return;
@@ -1623,14 +832,7 @@ function DietAndWaterModule({
     }
 
     try {
-      const mealsCol = collection(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'refeicoes'
-      );
+      const mealsCol = collection(db, 'artifacts', appId, 'users', user.uid, 'refeicoes');
       await addDoc(mealsCol, {
         date: todayStr,
         mealType: selectedMealType,
@@ -1653,15 +855,7 @@ function DietAndWaterModule({
 
   const handleDeleteMeal = async (mealId) => {
     try {
-      const docRef = doc(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'refeicoes',
-        mealId
-      );
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'refeicoes', mealId);
       await deleteDoc(docRef);
       showToast('Item excluído');
     } catch (err) {
@@ -1676,9 +870,7 @@ function DietAndWaterModule({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-xs font-black text-white uppercase tracking-wider">
-              Metas Diárias de Nutrição
-            </h2>
+            <h2 className="text-xs font-black text-white uppercase tracking-wider">Metas Diárias de Nutrição</h2>
           </div>
           <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20">
             Hoje
@@ -1688,14 +880,10 @@ function DietAndWaterModule({
         <div className="grid grid-cols-2 gap-3.5">
           <div className="space-y-1.5 bg-neutral-950 p-3.5 rounded-2xl border border-neutral-800/80">
             <div className="flex justify-between items-baseline">
-              <span className="text-xs font-semibold text-neutral-400">
-                Proteína
-              </span>
+              <span className="text-xs font-semibold text-neutral-400">Proteína</span>
               <span className="text-sm font-bold text-emerald-400">
                 {totalProteinToday}{' '}
-                <span className="text-[10px] text-neutral-500 font-normal">
-                  / {DEFAULT_TARGETS.proteinGrams}g
-                </span>
+                <span className="text-[10px] text-neutral-500 font-normal">/ {DEFAULT_TARGETS.proteinGrams}g</span>
               </span>
             </div>
             <div className="w-full bg-neutral-800 h-2 rounded-full overflow-hidden">
@@ -1704,21 +892,15 @@ function DietAndWaterModule({
                 style={{ width: `${proteinPercent}%` }}
               />
             </div>
-            <span className="text-[10px] text-neutral-500 block text-right">
-              {proteinPercent}% da meta
-            </span>
+            <span className="text-[10px] text-neutral-500 block text-right">{proteinPercent}% da meta</span>
           </div>
 
           <div className="space-y-1.5 bg-neutral-950 p-3.5 rounded-2xl border border-neutral-800/80">
             <div className="flex justify-between items-baseline">
-              <span className="text-xs font-semibold text-neutral-400">
-                Calorias
-              </span>
+              <span className="text-xs font-semibold text-neutral-400">Calorias</span>
               <span className="text-sm font-bold text-amber-400">
                 {totalCaloriesToday}{' '}
-                <span className="text-[10px] text-neutral-500 font-normal">
-                  / {DEFAULT_TARGETS.calories}
-                </span>
+                <span className="text-[10px] text-neutral-500 font-normal">/ {DEFAULT_TARGETS.calories}</span>
               </span>
             </div>
             <div className="w-full bg-neutral-800 h-2 rounded-full overflow-hidden">
@@ -1727,9 +909,7 @@ function DietAndWaterModule({
                 style={{ width: `${calPercent}%` }}
               />
             </div>
-            <span className="text-[10px] text-neutral-500 block text-right">
-              {calPercent}% da meta
-            </span>
+            <span className="text-[10px] text-neutral-500 block text-right">{calPercent}% da meta</span>
           </div>
         </div>
       </div>
@@ -1739,9 +919,7 @@ function DietAndWaterModule({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Droplet className="w-5 h-5 text-cyan-400 fill-cyan-400/20" />
-            <h2 className="text-xs font-black text-white uppercase tracking-wider">
-              Hidratação
-            </h2>
+            <h2 className="text-xs font-black text-white uppercase tracking-wider">Hidratação</h2>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1781,18 +959,14 @@ function DietAndWaterModule({
         <div className="flex items-end justify-between">
           <div>
             <div className="text-3xl font-black text-white tracking-tight">
-              {(currentWater / 1000).toFixed(2)}{' '}
-              <span className="text-base font-normal text-neutral-400">L</span>
+              {(currentWater / 1000).toFixed(2)} <span className="text-base font-normal text-neutral-400">L</span>
             </div>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Meta: {(waterTarget / 1000).toFixed(1)} L ({currentWater} /{' '}
-              {waterTarget} ml)
+              Meta: {(waterTarget / 1000).toFixed(1)} L ({currentWater} / {waterTarget} ml)
             </p>
           </div>
           <div className="text-right">
-            <span className="text-2xl font-black text-cyan-400">
-              {waterPercent}%
-            </span>
+            <span className="text-2xl font-black text-cyan-400">{waterPercent}%</span>
           </div>
         </div>
 
@@ -1825,14 +999,12 @@ function DietAndWaterModule({
         </div>
       </div>
 
-      {/* 3. Registro de Refeições com Autocomplete + Botão Obrigatório "+ Novo Alimento" */}
+      {/* 3. Registro de Refeições */}
       <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-5 shadow-lg space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Flame className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-xs font-black text-white uppercase tracking-wider">
-              Adicionar Refeição
-            </h2>
+            <h2 className="text-xs font-black text-white uppercase tracking-wider">Adicionar Refeição</h2>
           </div>
           <button
             type="button"
@@ -1843,7 +1015,6 @@ function DietAndWaterModule({
           </button>
         </div>
 
-        {/* Seletor do Tipo de Refeição */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           {mealTypes.map((t) => (
             <button
@@ -1882,7 +1053,6 @@ function DietAndWaterModule({
               />
             </div>
 
-            {/* Dropdown Reativo de Sugestões */}
             {isAutocompleteOpen && autocompleteSuggestions.length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-1.5 bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl z-30 max-h-60 overflow-y-auto divide-y divide-neutral-900">
                 {autocompleteSuggestions.map((food, idx) => (
@@ -1902,8 +1072,7 @@ function DietAndWaterModule({
                         )}
                       </div>
                       <div className="text-[10px] text-neutral-500">
-                        {food.category} • {food.p}g P | {food.c}g C | {food.f}g
-                        G
+                        {food.category} • {food.p}g P | {food.c}g C | {food.f}g G
                       </div>
                     </div>
                     <span className="text-[10px] font-mono text-amber-400 whitespace-nowrap bg-amber-500/10 px-2 py-0.5 rounded-md">
@@ -1929,9 +1098,7 @@ function DietAndWaterModule({
                 onChange={(e) => setPortionGrams(e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-3.5 pr-10 py-2.5 text-sm text-white font-bold focus:outline-none focus:border-emerald-500"
               />
-              <span className="absolute right-3.5 top-2.5 text-xs text-neutral-500 font-semibold">
-                g
-              </span>
+              <span className="absolute right-3.5 top-2.5 text-xs text-neutral-500 font-semibold">g</span>
             </div>
           </div>
 
@@ -1939,16 +1106,13 @@ function DietAndWaterModule({
             <span className="text-neutral-400">Total desta porção:</span>
             <div className="flex items-center gap-2.5">
               <span className="font-bold text-emerald-400">
-                {previewMacros.protein}g{' '}
-                <span className="text-[10px] text-neutral-500">P</span>
+                {previewMacros.protein}g <span className="text-[10px] text-neutral-500">P</span>
               </span>
               <span className="font-bold text-cyan-400">
-                {previewMacros.carbs}g{' '}
-                <span className="text-[10px] text-neutral-500">C</span>
+                {previewMacros.carbs}g <span className="text-[10px] text-neutral-500">C</span>
               </span>
               <span className="font-bold text-amber-400">
-                {previewMacros.calories}{' '}
-                <span className="text-[10px] text-neutral-500">kcal</span>
+                {previewMacros.calories} <span className="text-[10px] text-neutral-500">kcal</span>
               </span>
             </div>
           </div>
@@ -1962,30 +1126,23 @@ function DietAndWaterModule({
         </form>
       </div>
 
-      {/* Modal Rápido: "+ Novo Alimento" */}
+      {/* Modal: "+ Novo Alimento" */}
       {isNewFoodModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-xs font-black text-white uppercase tracking-wider">
-                  Cadastrar Novo Alimento
-                </h3>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">Cadastrar Novo Alimento</h3>
               </div>
-              <button
-                onClick={() => setIsNewFoodModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-white"
-              >
+              <button onClick={() => setIsNewFoodModalOpen(false)} className="p-1 rounded-lg text-neutral-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSaveCustomFood} className="space-y-3">
               <div>
-                <label className="text-[10px] font-semibold text-neutral-400 block mb-1">
-                  Nome do Alimento
-                </label>
+                <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Nome do Alimento</label>
                 <input
                   type="text"
                   placeholder="Ex: Pão de queijo da tia, Iogurte Yopro..."
@@ -2011,9 +1168,7 @@ function DietAndWaterModule({
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="text-[9px] font-semibold text-neutral-400 block mb-1">
-                    Proteína (g)
-                  </label>
+                  <label className="text-[9px] font-semibold text-neutral-400 block mb-1">Proteína (g)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -2025,9 +1180,7 @@ function DietAndWaterModule({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-semibold text-neutral-400 block mb-1">
-                    Carboidrato (g)
-                  </label>
+                  <label className="text-[9px] font-semibold text-neutral-400 block mb-1">Carboidrato (g)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -2039,9 +1192,7 @@ function DietAndWaterModule({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-semibold text-neutral-400 block mb-1">
-                    Gorduras (g)
-                  </label>
+                  <label className="text-[9px] font-semibold text-neutral-400 block mb-1">Gorduras (g)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -2096,8 +1247,7 @@ function DietAndWaterModule({
 
         {todayMeals.length === 0 ? (
           <div className="text-center py-8 bg-neutral-900/40 rounded-3xl border border-neutral-800/60 text-neutral-500 text-xs">
-            Nenhuma refeição registrada hoje. Inicie com um registro rápido
-            acima!
+            Nenhuma refeição registrada hoje. Inicie com um registro rápido acima!
           </div>
         ) : (
           <div className="space-y-2">
@@ -2113,23 +1263,15 @@ function DietAndWaterModule({
                       <span className="text-[10px] font-semibold bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-md">
                         {m.mealType}
                       </span>
-                      <h4 className="text-xs font-semibold text-white">
-                        {m.foodName}
-                      </h4>
+                      <h4 className="text-xs font-semibold text-white">{m.foodName}</h4>
                     </div>
-                    <p className="text-[11px] text-neutral-400">
-                      {m.grams}g consumidos
-                    </p>
+                    <p className="text-[11px] text-neutral-400">{m.grams}g consumidos</p>
                   </div>
 
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className="text-xs font-bold text-emerald-400">
-                        +{m.protein}g prot
-                      </div>
-                      <div className="text-[11px] text-amber-400 font-medium">
-                        +{m.calories} kcal
-                      </div>
+                      <div className="text-xs font-bold text-emerald-400">+{m.protein}g prot</div>
+                      <div className="text-[11px] text-amber-400 font-medium">+{m.calories} kcal</div>
                     </div>
                     <button
                       onClick={() => handleDeleteMeal(m.id)}
@@ -2159,25 +1301,18 @@ function FlexibleWorkoutModule({
   handleUpdateProfile,
   showToast,
 }) {
-  // Configurações do Treino Atual
   const [sessionDate, setSessionDate] = useState(todayStr);
-  const [gymName, setGymName] = useState(
-    userSettings.defaultGym || 'Ultra Vila Branca'
-  );
-  const [splitTag, setSplitTag] = useState('Treino A'); // Treino A, B, C, D ou Livre
+  const [gymName, setGymName] = useState(userSettings.defaultGym || 'Ultra Vila Branca');
+  const [splitTag, setSplitTag] = useState('Treino A');
 
-  // Seleção de Exercício a partir do Catálogo Desduplicado
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Dorsal');
-  const [selectedExerciseName, setSelectedExerciseName] =
-    useState('Pulldown com corda');
+  const [selectedExerciseName, setSelectedExerciseName] = useState('Pulldown com corda');
   const [activeMethod, setActiveMethod] = useState('3x 9-15');
 
-  // Input de Série Rápida
-  const [selectedSetCategory, setSelectedSetCategory] = useState('Válida'); // 'Aquecimento' | 'Preparatória' | 'Válida'
+  const [selectedSetCategory, setSelectedSetCategory] = useState('Válida');
   const [inputWeight, setInputWeight] = useState('');
   const [inputReps, setInputReps] = useState('');
 
-  // Cronômetro de descanso
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const timerRef = useRef(null);
@@ -2195,7 +1330,6 @@ function FlexibleWorkoutModule({
     'Abdômen',
   ];
 
-  // Atualizar método padrão quando o exercício muda
   useEffect(() => {
     const catalogItem = OFFICIAL_EXERCISE_CATALOG.find(
       (e) => e.name.toLowerCase() === selectedExerciseName.toLowerCase()
@@ -2205,7 +1339,6 @@ function FlexibleWorkoutModule({
     }
   }, [selectedExerciseName]);
 
-  // Cronômetro
   useEffect(() => {
     if (timerRunning && timerSeconds > 0) {
       timerRef.current = setInterval(() => {
@@ -2230,16 +1363,10 @@ function FlexibleWorkoutModule({
     setTimerRunning(true);
   };
 
-  // Exercícios filtrados por grupo muscular
   const availableExercisesForMuscle = useMemo(() => {
-    return OFFICIAL_EXERCISE_CATALOG.filter(
-      (e) => e.muscle === selectedMuscleFilter
-    );
+    return OFFICIAL_EXERCISE_CATALOG.filter((e) => e.muscle === selectedMuscleFilter);
   }, [selectedMuscleFilter]);
 
-  // =========================================================================
-  // CARD DE HISTÓRICO: BUSCA NO FIRESTORE O ÚLTIMO REGISTRO POR CATEGORIA
-  // =========================================================================
   const exerciseHistoricalPerformance = useMemo(() => {
     const targetName = selectedExerciseName.trim().toLowerCase();
     if (!targetName) return null;
@@ -2250,7 +1377,6 @@ function FlexibleWorkoutModule({
 
     if (matchingSets.length === 0) return null;
 
-    // Encontrar a última data em que o exercício foi executado
     const sortedByDate = [...matchingSets].sort((a, b) => {
       if (b.date !== a.date) return b.date.localeCompare(a.date);
       return (b.createdAt || 0) - (a.createdAt || 0);
@@ -2262,10 +1388,7 @@ function FlexibleWorkoutModule({
     const getBestFromCategory = (cat) => {
       const catSets = lastSessionSets.filter((s) => s.category === cat);
       if (catSets.length === 0) return null;
-      return catSets.reduce(
-        (best, cur) => (Number(cur.weight) > Number(best.weight) ? cur : best),
-        catSets[0]
-      );
+      return catSets.reduce((best, cur) => (Number(cur.weight) > Number(best.weight) ? cur : best), catSets[0]);
     };
 
     return {
@@ -2278,7 +1401,6 @@ function FlexibleWorkoutModule({
     };
   }, [workoutSets, selectedExerciseName, activeMethod]);
 
-  // Gravar Série Individual no Firestore
   const handleRecordSet = async (e) => {
     e.preventDefault();
     if (!selectedExerciseName) {
@@ -2295,14 +1417,7 @@ function FlexibleWorkoutModule({
     }
 
     try {
-      const setsCol = collection(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'treinos_series'
-      );
+      const setsCol = collection(db, 'artifacts', appId, 'users', user.uid, 'treinos_series');
       await addDoc(setsCol, {
         date: sessionDate,
         gymName: gymName,
@@ -2330,7 +1445,6 @@ function FlexibleWorkoutModule({
     }
   };
 
-  // Séries registradas nesta sessão hoje
   const currentSessionSets = useMemo(() => {
     return workoutSets
       .filter((s) => s.date === sessionDate)
@@ -2339,15 +1453,7 @@ function FlexibleWorkoutModule({
 
   const handleDeleteSet = async (setId) => {
     try {
-      const docRef = doc(
-        db,
-        'artifacts',
-        appId,
-        'users',
-        user.uid,
-        'treinos_series',
-        setId
-      );
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'treinos_series', setId);
       await deleteDoc(docRef);
       showToast('Série excluída com sucesso');
     } catch (err) {
@@ -2357,45 +1463,38 @@ function FlexibleWorkoutModule({
 
   return (
     <div className="space-y-6">
-      {/* 1. Cabeçalho da Sessão: Data, Dropdown de Academias & Divisão */}
+      {/* 1. Cabeçalho da Sessão */}
       <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-5 shadow-lg space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Dumbbell className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-xs font-black text-white uppercase tracking-wider">
-              Sessão de Força
-            </h2>
+            <h2 className="text-xs font-black text-white uppercase tracking-wider">Sessão de Força</h2>
           </div>
           <span className="text-[10px] font-bold bg-cyan-500/10 text-cyan-400 px-2.5 py-0.5 rounded-full border border-cyan-500/20">
             Tempo Real
           </span>
         </div>
 
-        {/* Divisão de Treino */}
         <div className="grid grid-cols-5 gap-1.5">
-          {['Treino A', 'Treino B', 'Treino C', 'Treino D', 'Livre'].map(
-            (tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setSplitTag(tag)}
-                className={`py-2 text-[11px] font-black rounded-xl transition ${
-                  splitTag === tag
-                    ? 'bg-cyan-500 text-neutral-950 shadow-md shadow-cyan-500/20'
-                    : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:text-white'
-                }`}
-              >
-                {tag}
-              </button>
-            )
-          )}
+          {['Treino A', 'Treino B', 'Treino C', 'Treino D', 'Livre'].map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setSplitTag(tag)}
+              className={`py-2 text-[11px] font-black rounded-xl transition ${
+                splitTag === tag
+                  ? 'bg-cyan-500 text-neutral-950 shadow-md shadow-cyan-500/20'
+                  : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:text-white'
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
         </div>
 
         <div className="grid grid-cols-2 gap-2 pt-1">
           <div>
-            <label className="text-[10px] font-semibold text-neutral-400 block mb-1">
-              Data da Sessão
-            </label>
+            <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Data da Sessão</label>
             <input
               type="date"
               value={sessionDate}
@@ -2423,16 +1522,14 @@ function FlexibleWorkoutModule({
         </div>
       </div>
 
-      {/* 2. Cronômetro de Descanso Integrado */}
+      {/* 2. Cronômetro de Descanso */}
       <div className="bg-gradient-to-r from-neutral-900 via-neutral-900/95 to-neutral-900 border border-neutral-800 rounded-3xl p-4 shadow-xl flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-neutral-950 rounded-2xl border border-neutral-800 text-cyan-400">
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">
-              Descanso
-            </div>
+            <div className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">Descanso</div>
             <div className="text-2xl font-black font-mono tracking-wider text-white">
               {String(Math.floor(timerSeconds / 60)).padStart(2, '0')}:
               {String(timerSeconds % 60).padStart(2, '0')}
@@ -2465,32 +1562,23 @@ function FlexibleWorkoutModule({
               timerRunning ? 'bg-amber-400' : 'bg-cyan-400'
             }`}
           >
-            {timerRunning ? (
-              <Pause className="w-4 h-4" />
-            ) : (
-              <Play className="w-4 h-4 fill-current" />
-            )}
+            {timerRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
           </button>
         </div>
       </div>
 
-      {/* 3. Seleção do Exercício do Catálogo Desduplicado & Dropdown de Métodos */}
+      {/* 3. Seleção do Exercício */}
       <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-5 shadow-lg space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-xs font-black text-white uppercase tracking-wider">
-              Escolha do Exercício
-            </h3>
+            <h3 className="text-xs font-black text-white uppercase tracking-wider">Escolha do Exercício</h3>
           </div>
         </div>
 
         <div className="space-y-3">
-          {/* Seletor de Grupo Muscular */}
           <div>
-            <label className="text-[10px] font-semibold text-neutral-400 block mb-1">
-              Grupo Muscular:
-            </label>
+            <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Grupo Muscular:</label>
             <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
               {muscleList.map((m) => (
                 <button
@@ -2498,9 +1586,7 @@ function FlexibleWorkoutModule({
                   type="button"
                   onClick={() => {
                     setSelectedMuscleFilter(m);
-                    const firstEx = OFFICIAL_EXERCISE_CATALOG.find(
-                      (e) => e.muscle === m
-                    );
+                    const firstEx = OFFICIAL_EXERCISE_CATALOG.find((e) => e.muscle === m);
                     if (firstEx) setSelectedExerciseName(firstEx.name);
                   }}
                   className={`px-3 py-1.5 text-xs rounded-xl whitespace-nowrap font-medium transition ${
@@ -2515,7 +1601,6 @@ function FlexibleWorkoutModule({
             </div>
           </div>
 
-          {/* Select do Exercício */}
           <div>
             <label className="text-[10px] font-semibold text-neutral-400 block mb-1">
               Exercício ({availableExercisesForMuscle.length} disponíveis):
@@ -2533,11 +1618,8 @@ function FlexibleWorkoutModule({
             </select>
           </div>
 
-          {/* Dropdown com as opções exatas de métodos */}
           <div>
-            <label className="text-[10px] font-semibold text-neutral-400 block mb-1">
-              Método de Treino:
-            </label>
+            <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Método de Treino:</label>
             <select
               value={activeMethod}
               onChange={(e) => setActiveMethod(e.target.value)}
@@ -2553,19 +1635,16 @@ function FlexibleWorkoutModule({
         </div>
       </div>
 
-      {/* 4. CARD DE HISTÓRICO DO EXERCÍCIO SELECIONADO (SEPARADO POR CATEGORIA) */}
+      {/* 4. Card de Histórico */}
       <div className="bg-gradient-to-br from-neutral-900 to-neutral-950 border border-cyan-800/40 rounded-3xl p-5 shadow-lg space-y-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-cyan-400" />
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">
-              Último Histórico Salvo
-            </h4>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider">Último Histórico Salvo</h4>
           </div>
           {exerciseHistoricalPerformance && (
             <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
-              {exerciseHistoricalPerformance.lastDate} •{' '}
-              {exerciseHistoricalPerformance.gymName}
+              {exerciseHistoricalPerformance.lastDate} • {exerciseHistoricalPerformance.gymName}
             </span>
           )}
         </div>
@@ -2573,7 +1652,6 @@ function FlexibleWorkoutModule({
         {exerciseHistoricalPerformance ? (
           <div className="space-y-2">
             <div className="grid grid-cols-3 gap-2">
-              {/* Aquecimento */}
               <div className="bg-neutral-950/80 p-2.5 rounded-2xl border border-neutral-800/80 text-center">
                 <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
                   Aquecimento
@@ -2592,7 +1670,6 @@ function FlexibleWorkoutModule({
                 )}
               </div>
 
-              {/* Preparatória */}
               <div className="bg-neutral-950/80 p-2.5 rounded-2xl border border-neutral-800/80 text-center">
                 <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider block mb-1">
                   Preparatória
@@ -2611,7 +1688,6 @@ function FlexibleWorkoutModule({
                 )}
               </div>
 
-              {/* Válida */}
               <div className="bg-neutral-950/80 p-2.5 rounded-2xl border border-emerald-500/30 text-center shadow-inner">
                 <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">
                   Válida
@@ -2633,34 +1709,26 @@ function FlexibleWorkoutModule({
 
             <p className="text-[10px] text-neutral-400 text-center pt-0.5">
               Método registrado na sessão anterior:{' '}
-              <span className="text-amber-300 font-medium">
-                "{exerciseHistoricalPerformance.method}"
-              </span>
+              <span className="text-amber-300 font-medium">"{exerciseHistoricalPerformance.method}"</span>
             </p>
           </div>
         ) : (
           <div className="text-center py-4 text-neutral-500 text-xs bg-neutral-950/40 rounded-2xl border border-neutral-800/50">
-            Nenhum histórico anterior localizado para este exercício. Registre
-            sua primeira carga hoje!
+            Nenhum histórico anterior localizado para este exercício. Registre sua primeira carga hoje!
           </div>
         )}
       </div>
 
-      {/* 5. LOG RÁPIDO DE SÉRIES COM BOTÕES DE 1 CLIQUE */}
+      {/* 5. Log Rápido de Séries */}
       <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-5 shadow-lg space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400/20" />
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">
-              Gravar Nova Série
-            </h4>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider">Gravar Nova Série</h4>
           </div>
-          <span className="text-[11px] font-bold text-white max-w-[180px] truncate">
-            {selectedExerciseName}
-          </span>
+          <span className="text-[11px] font-bold text-white max-w-[180px] truncate">{selectedExerciseName}</span>
         </div>
 
-        {/* Seletor de Categoria da Série */}
         <div className="grid grid-cols-3 gap-2">
           {['Aquecimento', 'Preparatória', 'Válida'].map((cat) => (
             <button
@@ -2700,9 +1768,7 @@ function FlexibleWorkoutModule({
             </div>
 
             <div>
-              <label className="text-[10px] font-semibold text-neutral-400 block mb-1">
-                Repetições (inteiro)
-              </label>
+              <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Repetições (inteiro)</label>
               <input
                 type="number"
                 step="1"
@@ -2724,7 +1790,7 @@ function FlexibleWorkoutModule({
         </form>
       </div>
 
-      {/* 6. Lista de Séries Gravadas na Sessão Selecionada */}
+      {/* 6. Lista de Séries Gravadas */}
       <div className="space-y-3">
         <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider px-1">
           Séries Desta Sessão ({currentSessionSets.length})
@@ -2754,9 +1820,7 @@ function FlexibleWorkoutModule({
                     >
                       {s.category}
                     </span>
-                    <strong className="text-xs font-bold text-white">
-                      {s.exerciseName}
-                    </strong>
+                    <strong className="text-xs font-bold text-white">{s.exerciseName}</strong>
                   </div>
                   <div className="text-[10px] text-neutral-400">
                     {s.method} • {s.gymName}
@@ -2765,12 +1829,8 @@ function FlexibleWorkoutModule({
 
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <span className="text-sm font-black text-cyan-400">
-                      {s.weight} kg
-                    </span>
-                    <span className="text-xs text-neutral-400 ml-1">
-                      × {s.reps} reps
-                    </span>
+                    <span className="text-sm font-black text-cyan-400">{s.weight} kg</span>
+                    <span className="text-xs text-neutral-400 ml-1">× {s.reps} reps</span>
                   </div>
                   <button
                     onClick={() => handleDeleteSet(s.id)}
@@ -2832,23 +1892,19 @@ function AnalyticsAndHistoryModule({
     return '1970-01-01';
   }, [periodFilter]);
 
-  // Séries filtradas
   const filteredSets = useMemo(() => {
     return workoutSets.filter((s) => {
       const passDate = s.date >= filterDateLimit;
       const passGym = gymFilter === 'all' || s.gymName === gymFilter;
-      const passMuscle =
-        muscleFilter === 'all' || s.muscleGroup === muscleFilter;
+      const passMuscle = muscleFilter === 'all' || s.muscleGroup === muscleFilter;
       const passSearch =
         !searchExercise.trim() ||
-        (s.exerciseName &&
-          s.exerciseName.toLowerCase().includes(searchExercise.toLowerCase()));
+        (s.exerciseName && s.exerciseName.toLowerCase().includes(searchExercise.toLowerCase()));
 
       return passDate && passGym && passMuscle && passSearch;
     });
   }, [workoutSets, filterDateLimit, gymFilter, muscleFilter, searchExercise]);
 
-  // Agrupamento por Sessões (Data + Academia)
   const groupedSessions = useMemo(() => {
     const map = {};
     filteredSets.forEach((s) => {
@@ -2869,9 +1925,7 @@ function AnalyticsAndHistoryModule({
 
   return (
     <div className="space-y-6">
-      {/* 1. Barra de Filtros Rápidos */}
       <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-4 shadow-lg space-y-3">
-        {/* Busca por Exercício */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-3 text-neutral-500" />
           <input
@@ -2883,7 +1937,6 @@ function AnalyticsAndHistoryModule({
           />
         </div>
 
-        {/* Filtro por Período */}
         <div className="grid grid-cols-3 gap-1.5">
           {[
             { id: '7d', label: '7 Dias' },
@@ -2904,7 +1957,6 @@ function AnalyticsAndHistoryModule({
           ))}
         </div>
 
-        {/* Filtro por Academia */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           <button
             onClick={() => setGymFilter('all')}
@@ -2931,7 +1983,6 @@ function AnalyticsAndHistoryModule({
           ))}
         </div>
 
-        {/* Filtro por Grupo Muscular */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           {musclesList.map((m) => (
             <button
@@ -2949,7 +2000,6 @@ function AnalyticsAndHistoryModule({
         </div>
       </div>
 
-      {/* 2. Lista Cronológica de Sessões com Detalhamento de Séries */}
       <div className="space-y-3">
         <h3 className="text-xs font-black text-neutral-400 uppercase tracking-wider px-1">
           Sessões Registradas ({groupedSessions.length})
@@ -2962,10 +2012,7 @@ function AnalyticsAndHistoryModule({
         ) : (
           <div className="space-y-3">
             {groupedSessions.map((session, sIdx) => {
-              const totalVolume = session.sets.reduce(
-                (acc, cur) => acc + cur.weight * cur.reps,
-                0
-              );
+              const totalVolume = session.sets.reduce((acc, cur) => acc + cur.weight * cur.reps, 0);
               return (
                 <div
                   key={sIdx}
@@ -2974,9 +2021,7 @@ function AnalyticsAndHistoryModule({
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-                      <strong className="text-cyan-400 font-bold">
-                        {session.splitTag}
-                      </strong>
+                      <strong className="text-cyan-400 font-bold">{session.splitTag}</strong>
                       <span className="text-neutral-500">• {session.date}</span>
                     </div>
                     <span className="text-[11px] font-bold text-neutral-400 bg-neutral-950 px-2.5 py-1 rounded-xl border border-neutral-800">
@@ -3003,9 +2048,7 @@ function AnalyticsAndHistoryModule({
                             >
                               {set.category[0]}
                             </span>
-                            <span className="font-bold text-white">
-                              {set.exerciseName}
-                            </span>
+                            <span className="font-bold text-white">{set.exerciseName}</span>
                           </div>
                           <span className="text-[10px] text-neutral-500 ml-5">
                             {set.muscleGroup} • {set.method}
@@ -3013,10 +2056,7 @@ function AnalyticsAndHistoryModule({
                         </div>
 
                         <div className="font-mono text-neutral-200">
-                          <strong className="text-cyan-300">
-                            {set.weight}kg
-                          </strong>{' '}
-                          × {set.reps}
+                          <strong className="text-cyan-300">{set.weight}kg</strong> × {set.reps}
                         </div>
                       </div>
                     ))}
